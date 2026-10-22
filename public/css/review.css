@@ -1,0 +1,27 @@
+/* Review tab */
+
+/* Review */
+.rv-head { padding: 10px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--panel); z-index: 1; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.chip {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  border-radius: 14px;
+  padding: 3px 10px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.chip.on { background: var(--panel2); color: var(--text); border-color: #3b4252; }
+.chip b { color: var(--warn); font-weight: 600; margin-left: 2px; }
+.rv-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.rv-empty { padding: 30px; text-align: center; color: var(--active); }
+.rv-item { padding: 8px 12px; border-bottom: 1px solid var(--border); border-left: 3px solid var(--warn); cursor: pointer; }
+.rv-item.lvl-2 { border-left-color: var(--danger); }
+.rv-item:hover { background: #1a1e26; }
+.rv-top { display: flex; gap: 8px; align-items: baseline; font-size: 13px; flex-wrap: wrap; }
+.rv-msg { flex: 1; min-width: 200px; }
+.rv-text { font-size: 13px; color: #b9c0cd; margin: 4px 0 6px 38px; }
+.rv-btns { display: flex; gap: 6px; margin-left: 38px; }
+.rv-btns .btn { padding: 2px 8px; font-size: 12px; }

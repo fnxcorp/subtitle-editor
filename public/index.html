@@ -1,0 +1,415 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Subtitle Editor</title>
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/layout.css">
+  <link rel="stylesheet" href="css/list.css">
+  <link rel="stylesheet" href="css/review.css">
+  <link rel="stylesheet" href="css/video.css">
+  <link rel="stylesheet" href="css/timeline.css">
+  <link rel="stylesheet" href="css/dialogs.css">
+  <link rel="stylesheet" href="css/help.css">
+</head>
+<body>
+  <!-- All texts come from locales/*.json (data-i18n*); see js/core/i18n.js -->
+  <header>
+    <strong class="brand" data-i18n="header.brand"></strong>
+
+    <label class="btn primary"><span data-i18n="header.openSrt"></span>
+      <input type="file" id="srt-input" accept=".srt,.vtt,.txt" hidden>
+    </label>
+    <label class="btn primary"><span data-i18n="header.openVideo"></span>
+      <input type="file" id="video-input" accept="video/*,audio/*,.mkv,.mov" hidden>
+    </label>
+    <label class="btn primary" id="tr-open" hidden data-i18n-title="header.openTrTitle"><span data-i18n="header.openTr"></span>
+      <input type="file" id="tr-input" accept=".srt,.vtt,.txt" hidden>
+    </label>
+    <button class="btn" id="new-btn" data-i18n="header.new" data-i18n-title="header.newTitle"></button>
+
+    <span class="sep"></span>
+    <button class="btn" id="undo-btn" data-i18n-title="header.undoTitle">↶</button>
+    <button class="btn" id="redo-btn" data-i18n-title="header.redoTitle">↷</button>
+
+    <span class="files">
+      <span id="srt-name" data-i18n="header.noSubs"></span>
+      <span class="muted">·</span>
+      <span id="video-name" class="muted" data-i18n="header.noVideo"></span>
+    </span>
+
+    <button class="save-status" id="save-status" title="">—</button>
+
+    <button class="btn toggle" id="tr-toggle" aria-pressed="false" data-i18n="header.translation" data-i18n-title="header.translationTitle"></button>
+    <button class="btn" id="transcribe-btn" data-i18n="header.transcribe" data-i18n-title="header.transcribeTitle"></button>
+    <button class="btn" id="palette-btn" data-i18n-title="header.paletteTitle">⌘K</button>
+    <button class="btn" id="settings-btn" data-i18n-title="header.settingsTitle">⚙</button>
+    <button class="btn help-btn" id="help-btn" data-i18n-title="header.helpTitle">?</button>
+    <div class="menu-wrap">
+      <button class="btn accent" id="export-btn" data-i18n="header.export"></button>
+      <div class="menu" id="export-menu" hidden>
+        <button data-kind="srt" data-field="text">SRT</button>
+        <button data-kind="vtt" data-field="text">WebVTT</button>
+        <button data-kind="srt" data-field="tr" class="tr-only" data-i18n="header.srtTr"></button>
+        <button data-kind="vtt" data-field="tr" class="tr-only" data-i18n="header.vttTr"></button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <aside class="right">
+      <div class="list-head">
+        <div class="tabs">
+          <button class="tab active" data-view="list" id="tab-list"></button>
+          <button class="tab" data-view="review" id="tab-review" data-i18n="list.review"></button>
+        </div>
+        <span class="head-tools">
+          <label data-i18n-title="list.maxTitle">
+            <span data-i18n="list.max"></span>
+            <select id="max-cps">
+              <option value="12" data-i18n="list.cps12"></option>
+              <option value="15" data-i18n="list.cps15"></option>
+              <option value="17" data-i18n="list.cps17"></option>
+              <option value="20" data-i18n="list.cps20"></option>
+              <option value="25" data-i18n="list.cps25"></option>
+            </select>
+          </label>
+          <button class="btn issues" id="issues-btn" data-i18n-title="list.issuesTitle" hidden></button>
+        </span>
+        <button class="btn" id="find-btn" data-i18n-title="list.findTitle">🔍</button>
+        <button class="btn" id="add-btn" data-i18n="list.add" data-i18n-title="list.addTitle"></button>
+      </div>
+
+      <div class="find-bar" id="find-bar" hidden>
+        <div class="find-row">
+          <input type="text" id="find-q" data-i18n-placeholder="find.find" spellcheck="false">
+          <span id="find-count" class="muted"></span>
+          <button class="ib" id="find-prev" data-i18n-title="find.prev">↑</button>
+          <button class="ib" id="find-next" data-i18n-title="find.next">↓</button>
+          <button class="ib" id="find-close" data-i18n-title="find.close">✕</button>
+        </div>
+        <div class="find-row">
+          <input type="text" id="find-r" data-i18n-placeholder="find.replaceWith" spellcheck="false">
+          <button class="btn" id="find-one" data-i18n="find.replace"></button>
+          <button class="btn" id="find-all" data-i18n="find.all"></button>
+        </div>
+        <div class="find-row opts">
+          <label><input type="checkbox" id="find-case"> <span data-i18n="find.case"></span></label>
+          <label><input type="checkbox" id="find-word"> <span data-i18n="find.word"></span></label>
+          <label class="tr-only"><select id="find-field">
+            <option value="both" data-i18n="find.both"></option>
+            <option value="text" data-i18n="find.text"></option>
+            <option value="tr" data-i18n="find.tr"></option>
+          </select></label>
+        </div>
+      </div>
+
+      <div class="multi-bar" id="multi-bar" hidden>
+        <span id="multi-count"></span>
+        <button class="btn" data-multi="shift-minus" data-i18n-title="multi.earlier">−</button>
+        <input type="text" id="multi-offset" value="0.5" size="4"> s
+        <button class="btn" data-multi="shift-plus" data-i18n-title="multi.later">+</button>
+        <button class="btn" data-multi="merge" data-i18n="multi.merge"></button>
+        <button class="btn" data-multi="balance" data-i18n="multi.balance"></button>
+        <button class="btn" data-multi="delete" data-i18n="multi.delete"></button>
+        <button class="ib" data-multi="clear" data-i18n-title="multi.clear">✕</button>
+      </div>
+
+      <div id="cue-list"></div>
+      <div id="review" hidden></div>
+      <div id="empty">
+        <p data-i18n="list.emptyTitle"></p>
+        <p class="muted" data-i18n="list.emptyText"></p>
+        <p><button class="btn" id="empty-help" data-i18n="list.emptyHelp"></button></p>
+      </div>
+    </aside>
+
+    <section class="left">
+      <div class="video-wrap" id="video-wrap">
+        <div class="stage" id="stage">
+          <video id="video" playsinline></video>
+          <div id="picture">
+            <div class="ov" id="ov-top"></div>
+            <div class="ov" id="ov-bottom"></div>
+          </div>
+        </div>
+        <div id="speed-badge" hidden></div>
+        <div id="drop-hint">
+          <div data-i18n-html="video.dropHtml"></div>
+          <p id="last-video" hidden></p>
+        </div>
+
+        <div class="card" id="sync-card" hidden>
+          <div class="card-head"><b data-i18n="sync.title"></b><button class="ib" id="sync-close">✕</button></div>
+          <ol>
+            <li><span data-i18n-html="sync.step1"></span>
+              <button class="btn" id="sync-a" data-i18n="sync.pointA"></button> <span class="muted">(Alt+1)</span>
+              <div class="muted" id="sync-a-info"></div></li>
+            <li><span data-i18n-html="sync.step2"></span>
+              <button class="btn" id="sync-b" data-i18n="sync.pointB"></button> <span class="muted">(Alt+2)</span>
+              <div class="muted" id="sync-b-info"></div></li>
+          </ol>
+          <div id="sync-result"></div>
+          <button class="btn accent" id="sync-apply" disabled data-i18n="sync.apply"></button>
+        </div>
+
+        <div class="live-banner" id="live-banner" hidden>
+          <div class="live-top" data-i18n-html="live.topHtml"></div>
+          <div class="live-text" id="live-text"></div>
+          <div class="live-next muted" id="live-next"></div>
+          <div class="live-help muted" data-i18n-html="live.helpHtml"></div>
+        </div>
+      </div>
+
+      <div class="transport">
+        <button class="btn round" id="play-btn" data-i18n-title="transport.play">▶</button>
+        <button class="btn" id="back-btn" data-i18n-title="transport.back">−1s</button>
+        <button class="btn" id="fwd-btn" data-i18n-title="transport.fwd">+1s</button>
+        <button class="btn" id="frame-back" data-i18n-title="transport.frameBack">‹</button>
+        <button class="btn" id="frame-fwd" data-i18n-title="transport.frameFwd">›</button>
+        <span id="time" class="mono">00:00:00.000</span>
+        <span id="frame" class="mono muted"></span>
+        <input type="range" id="seek" min="0" max="1000" value="0" step="1">
+        <button class="btn toggle" id="loop-btn" aria-pressed="false" data-i18n-title="transport.loop">⟲</button>
+        <select id="rate" data-i18n-title="transport.speed">
+          <option value="0.5">0.5×</option>
+          <option value="0.75">0.75×</option>
+          <option value="1" selected>1×</option>
+          <option value="1.25">1.25×</option>
+          <option value="1.5">1.5×</option>
+          <option value="2">2×</option>
+        </select>
+        <input type="range" id="volume" min="0" max="1" step="0.05" value="1" data-i18n-title="transport.volume">
+        <div class="menu-wrap">
+          <button class="btn" id="preview-btn" data-i18n-title="transport.preview">Aa</button>
+          <div class="menu pop" id="preview-menu" hidden>
+            <label><span data-i18n="preview.size"></span> <input type="range" id="sub-size" min="60" max="160" step="5"></label>
+            <label><span data-i18n="preview.background"></span> <input type="range" id="sub-bg" min="0" max="1" step="0.05"></label>
+            <label><span data-i18n="preview.screen"></span>
+              <select id="device">
+                <option value="normal" data-i18n="preview.normal"></option>
+                <option value="phone" data-i18n="preview.phone"></option>
+                <option value="tv" data-i18n="preview.tv"></option>
+              </select>
+            </label>
+            <label class="tr-only"><span data-i18n="preview.show"></span>
+              <select id="overlay-src">
+                <option value="auto" data-i18n="preview.auto"></option>
+                <option value="both" data-i18n="preview.both"></option>
+                <option value="original" data-i18n="preview.original"></option>
+              </select>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div class="tools">
+        <button class="btn" id="sync-btn" data-i18n="tools.sync" data-i18n-title="tools.syncTitle"></button>
+        <button class="btn toggle" id="live-btn" aria-pressed="false" data-i18n="tools.live" data-i18n-title="tools.liveTitle"></button>
+        <div class="group">
+          <span class="label" data-i18n="tools.shift"></span>
+          <input id="offset" type="text" value="0.5" size="4" data-i18n-title="tools.seconds"> s
+          <select id="offset-scope">
+            <option value="all" data-i18n="tools.all"></option>
+            <option value="from" data-i18n="tools.fromSel"></option>
+          </select>
+          <button class="btn" id="offset-minus" data-i18n-title="tools.minus">−</button>
+          <button class="btn" id="offset-plus" data-i18n-title="tools.plus">+</button>
+        </div>
+        <div class="group">
+          <span class="label" data-i18n="tools.fps"></span>
+          <select id="fps-convert">
+            <option value="" data-i18n="tools.convert"></option>
+            <option value="23.976:25"></option>
+            <option value="25:23.976"></option>
+            <option value="24:25"></option>
+            <option value="25:24"></option>
+            <option value="23.976:24"></option>
+            <option value="24:23.976"></option>
+          </select>
+        </div>
+        <label class="group check" data-i18n-title="tools.rippleTitle">
+          <input type="checkbox" id="ripple"> <span data-i18n="tools.ripple"></span>
+        </label>
+        <label class="group check" data-i18n-title="tools.snapTitle">
+          <input type="checkbox" id="snap"> <span data-i18n="tools.snap"></span>
+        </label>
+        <label class="group check"><input type="checkbox" id="follow"> <span data-i18n="tools.follow"></span></label>
+        <button class="btn" id="wave-btn" data-i18n="tools.waveform" data-i18n-title="tools.waveformTitle"></button>
+        <button class="btn" id="scenes-btn" data-i18n="tools.cuts" data-i18n-title="tools.cutsTitle"></button>
+      </div>
+    </section>
+  </main>
+
+  <section class="timeline">
+    <canvas id="timeline"></canvas>
+    <div class="zoom">
+      <span class="muted" data-i18n="tools.zoom"></span>
+      <input type="range" id="zoom" min="0" max="100" value="50">
+    </div>
+  </section>
+
+  <!-- Command palette -->
+  <dialog id="palette">
+    <input type="text" id="palette-q" data-i18n-placeholder="palette.placeholder" spellcheck="false" autocomplete="off">
+    <div id="palette-list"></div>
+  </dialog>
+
+  <!-- Settings -->
+  <dialog id="settings">
+    <div class="dlg-head">
+      <div class="tabs">
+        <button class="tab active" data-stab="general" data-i18n="settings.tab"></button>
+        <button class="tab" data-stab="keys" data-i18n="settings.keysTab"></button>
+      </div>
+      <button class="ib" id="settings-close">✕</button>
+    </div>
+    <div class="stab" data-stab="general">
+      <fieldset>
+        <legend data-i18n="settings.language"></legend>
+        <label><span data-i18n="settings.language"></span>
+          <select id="s-lang">
+            <option value="en">English</option>
+            <option value="es">Español</option>
+          </select>
+        </label>
+        <p class="muted small" data-i18n="settings.languageNote"></p>
+      </fieldset>
+      <fieldset>
+        <legend data-i18n="settings.quality"></legend>
+        <label><span data-i18n="settings.maxCps"></span> <input type="number" id="s-maxCps" min="5" max="40" step="1"> cps</label>
+        <label><span data-i18n="settings.maxChars"></span> <input type="number" id="s-maxChars" min="20" max="80" step="1"></label>
+        <label><span data-i18n="settings.maxLines"></span> <input type="number" id="s-maxLines" min="1" max="4" step="1"></label>
+        <label><span data-i18n="settings.minDur"></span> <input type="number" id="s-minDur" min="0.2" max="3" step="0.05"> s</label>
+        <label><span data-i18n="settings.maxDur"></span> <input type="number" id="s-maxDur" min="2" max="20" step="0.5"> s</label>
+        <label><span data-i18n="settings.minGap"></span> <input type="number" id="s-minGapFrames" min="0" max="12" step="1"> <span data-i18n="settings.frames"></span></label>
+        <label><span data-i18n="settings.cutFrames"></span> <input type="number" id="s-cutFrames" min="1" max="24" step="1"> <span data-i18n="settings.frames"></span></label>
+      </fieldset>
+      <fieldset>
+        <legend data-i18n="settings.video"></legend>
+        <label><span data-i18n="settings.fps"></span>
+          <select id="s-fps">
+            <option value="0" data-i18n="settings.auto"></option>
+            <option value="23.976">23.976</option>
+            <option value="24">24</option>
+            <option value="25">25</option>
+            <option value="29.97">29.97</option>
+            <option value="30">30</option>
+            <option value="50">50</option>
+            <option value="59.94">59.94</option>
+            <option value="60">60</option>
+          </select>
+          <span class="muted" id="fps-detected"></span>
+        </label>
+        <label class="check"><input type="checkbox" id="s-frameExport"> <span data-i18n="settings.frameExport"></span></label>
+      </fieldset>
+      <fieldset>
+        <legend data-i18n="settings.text"></legend>
+        <label><span data-i18n="settings.spellLang"></span>
+          <select id="s-spellLang">
+            <option value="es" data-i18n="settings.spell.es"></option>
+            <option value="en" data-i18n="settings.spell.en"></option>
+            <option value="fr" data-i18n="settings.spell.fr"></option>
+            <option value="pt" data-i18n="settings.spell.pt"></option>
+            <option value="it" data-i18n="settings.spell.it"></option>
+            <option value="de" data-i18n="settings.spell.de"></option>
+            <option value="ca" data-i18n="settings.spell.ca"></option>
+          </select>
+        </label>
+      </fieldset>
+      <p class="muted small"><span data-i18n="settings.copiesIn"></span> <span id="copies-dir">—</span>
+        <button class="btn" id="reveal-copies" data-i18n="settings.openFolder"></button></p>
+    </div>
+    <div class="stab" data-stab="keys" hidden>
+      <p class="muted small" data-i18n="settings.keysIntro"></p>
+      <table id="keys-table"></table>
+      <p class="muted small" data-i18n-html="settings.keysTextHtml"></p>
+      <button class="btn" id="keys-reset" data-i18n="settings.resetAll"></button>
+    </div>
+  </dialog>
+
+  <!-- Transcription -->
+  <dialog id="transcribe">
+    <div class="dlg-head"><b data-i18n="tx.title"></b><button class="ib" id="tx-close">✕</button></div>
+    <p class="muted small" data-i18n="tx.intro"></p>
+    <div class="form">
+      <label><span data-i18n="tx.model"></span>
+        <select id="tx-model">
+          <option value="tiny" data-i18n="tx.tiny"></option>
+          <option value="base" selected data-i18n="tx.base"></option>
+          <option value="small" data-i18n="tx.small"></option>
+        </select>
+      </label>
+      <label><span data-i18n="tx.language"></span>
+        <select id="tx-lang">
+          <option value="spanish" data-i18n="tx.langs.spanish"></option>
+          <option value="english" data-i18n="tx.langs.english"></option>
+          <option value="french" data-i18n="tx.langs.french"></option>
+          <option value="portuguese" data-i18n="tx.langs.portuguese"></option>
+          <option value="italian" data-i18n="tx.langs.italian"></option>
+          <option value="german" data-i18n="tx.langs.german"></option>
+          <option value="catalan" data-i18n="tx.langs.catalan"></option>
+          <option value="" data-i18n="tx.detect"></option>
+        </select>
+      </label>
+      <label><span data-i18n="tx.mode"></span>
+        <select id="tx-mode">
+          <option value="replace" data-i18n="tx.replace"></option>
+          <option value="gaps" data-i18n="tx.gaps"></option>
+        </select>
+      </label>
+      <label class="check"><input type="checkbox" id="tx-from-now"> <span data-i18n="tx.fromNow"></span></label>
+      <label class="check"><input type="checkbox" id="tx-sounds"> <span data-i18n="tx.sounds"></span></label>
+    </div>
+    <div class="tx-progress" id="tx-progress" hidden>
+      <div class="bar"><i id="tx-bar"></i></div>
+      <div class="muted small" id="tx-status"></div>
+    </div>
+    <div class="dlg-actions">
+      <button class="btn" id="tx-cancel" hidden data-i18n="tx.cancel"></button>
+      <button class="btn accent" id="tx-start" data-i18n="tx.start"></button>
+    </div>
+  </dialog>
+
+  <!-- Help -->
+  <dialog id="help">
+    <div class="help-shell">
+      <nav class="help-nav">
+        <div class="help-title" data-i18n="help.title"></div>
+        <input type="search" id="help-q" data-i18n-placeholder="help.search" spellcheck="false" autocomplete="off">
+        <a href="#h-start" data-i18n="help.nav.start"></a>
+        <a href="#h-edit" data-i18n="help.nav.edit"></a>
+        <a href="#h-sync" data-i18n="help.nav.sync"></a>
+        <a href="#h-timeline" data-i18n="help.nav.timeline"></a>
+        <a href="#h-quality" data-i18n="help.nav.quality"></a>
+        <a href="#h-translate" data-i18n="help.nav.translate"></a>
+        <a href="#h-transcribe" data-i18n="help.nav.transcribe"></a>
+        <a href="#h-cuts" data-i18n="help.nav.cuts"></a>
+        <a href="#h-save" data-i18n="help.nav.save"></a>
+        <a href="#h-keys" data-i18n="help.nav.keys"></a>
+        <a href="#h-faq" data-i18n="help.nav.faq"></a>
+      </nav>
+      <div class="help-body" id="help-body">
+        <button class="ib help-close" id="help-close" data-i18n-title="help.close">✕</button>
+        <section id="h-start" data-i18n-html="help.start"></section>
+        <section id="h-edit" data-i18n-html="help.edit"></section>
+        <section id="h-sync" data-i18n-html="help.sync"></section>
+        <section id="h-timeline" data-i18n-html="help.timeline"></section>
+        <section id="h-quality" data-i18n-html="help.quality"></section>
+        <section id="h-translate" data-i18n-html="help.translate"></section>
+        <section id="h-transcribe" data-i18n-html="help.transcribe"></section>
+        <section id="h-cuts" data-i18n-html="help.cuts"></section>
+        <section id="h-save" data-i18n-html="help.save"></section>
+        <section id="h-keys" data-i18n-html="help.keys"></section>
+        <section id="h-faq" data-i18n-html="help.faq"></section>
+        <p class="help-noresults muted" id="help-noresults" hidden data-i18n="help.noResults"></p>
+      </div>
+    </div>
+  </dialog>
+
+  <div id="toast" hidden><span id="toast-msg"></span><button class="btn" id="toast-undo" hidden data-i18n="toast.undo"></button></div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

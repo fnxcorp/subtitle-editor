@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": [],
+    "verbatimModuleSyntax": true,
+    "rootDir": "src/web",
+    "outDir": "public/js"
+  },
+  "include": ["src/web"]
+}
