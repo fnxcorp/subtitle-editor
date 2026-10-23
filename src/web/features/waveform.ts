@@ -4,16 +4,32 @@ import { T } from '../core/i18n.ts';
 import { $ } from '../ui/dom.ts';
 import { toast } from '../ui/toast.ts';
 import { requestDraw } from './timeline.ts';
+import { serverInfo } from './saving.ts';
 
 function videoArrayBuffer(): Promise<ArrayBuffer> {
   const v = state.video!;
+  // Reading it whole would crash the page (out of memory) before decoding even starts
+  if (v.size > 1.5e9) return Promise.reject(new Error('file too large to decode in the browser'));
   return v.file ? v.file.arrayBuffer() : fetch(v.url).then(r => r.arrayBuffer());
 }
 
 // Decodes the current video's audio. A low sample rate greatly reduces the memory needed
+// Files opened from disk go through ffmpeg when available: it handles any codec and any size
+// (the browser path reads the whole file into memory, which fails for multi-GB videos)
 export async function decodeAudio(sampleRate: number): Promise<AudioBuffer> {
-  const buf = await videoArrayBuffer();
-  return new OfflineAudioContext(1, 1, sampleRate).decodeAudioData(buf);
+  const token = state.video?.token;
+  if (token && serverInfo.ffmpeg) return decodeWithFfmpeg(token, sampleRate);
+  return new OfflineAudioContext(1, 1, sampleRate).decodeAudioData(await videoArrayBuffer());
+}
+
+async function decodeWithFfmpeg(token: string, sampleRate: number): Promise<AudioBuffer> {
+  const res = await fetch(`/api/audio/${token}?rate=${sampleRate}`);
+  if (!res.ok) throw new Error(`ffmpeg audio: ${res.status}`);
+  const pcm = new Float32Array(await res.arrayBuffer());
+  if (!pcm.length) throw new Error('ffmpeg audio: no audio stream');
+  const audio = new AudioBuffer({ length: pcm.length, sampleRate, numberOfChannels: 1 });
+  audio.copyToChannel(pcm, 0);
+  return audio;
 }
 
 export async function buildWaveform() {
@@ -40,7 +56,7 @@ export async function buildWaveform() {
     if (v === state.video) { state.peaks = peaks; requestDraw(); }
   } catch (err) {
     console.error(err);
-    toast(T('toast.noAudio'), true);
+    toast(T('toast.noAudio') + (v.token ? '' : T('toast.noAudioWeb')), true);
   } finally {
     btn.disabled = false;
     btn.textContent = T('tools.waveform');

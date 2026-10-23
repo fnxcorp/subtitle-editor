@@ -43,6 +43,19 @@ function resizeCanvas() {
 }
 new ResizeObserver(resizeCanvas).observe(canvas);
 
+// The scrollbar's content spans the whole duration plus one screen, as far as the wheel can scroll
+const bar = $('#timeline-scroll');
+function syncScrollbar(W: number) {
+  (bar.firstElementChild as HTMLElement).style.width = `${duration() * state.pps + W}px`;
+  if (Math.abs(bar.scrollLeft - state.viewStart * state.pps) >= 1) bar.scrollLeft = state.viewStart * state.pps;
+}
+bar.addEventListener('scroll', () => {
+  if (Math.abs(bar.scrollLeft - state.viewStart * state.pps) < 1) return; // our own sync from drawTimeline
+  state.viewStart = bar.scrollLeft / state.pps;
+  state.lastUserScroll = performance.now();
+  dirty = true;
+});
+
 const viewSeconds = () => canvas.clientWidth / state.pps;
 
 // Scrolls the timeline so t is visible
@@ -73,13 +86,14 @@ function fmtRuler(t: number, step: number): string {
 }
 
 function cueBox(c: Cue, H: number) {
-  return { x0: (c.start - state.viewStart) * state.pps, x1: (c.end - state.viewStart) * state.pps, y: RULER + 8, h: H - RULER - 16 };
+  return { x0: (c.start - state.viewStart) * state.pps, x1: (c.end - state.viewStart) * state.pps, y: RULER + 8, h: H - RULER - 20 };
 }
 
 function drawTimeline() {
   const W = canvas.clientWidth, H = canvas.clientHeight;
   const { pps, viewStart: v0 } = state;
   const v1 = v0 + W / pps;
+  syncScrollbar(W);
   ctx.fillStyle = COL.bg;
   ctx.fillRect(0, 0, W, H);
 
@@ -180,6 +194,8 @@ function drawTimeline() {
     ctx.setLineDash([]);
   }
 
+  drawOverview(W, H);
+
   // Playhead
   const px = Math.round((getTime() - v0) * pps) + 0.5;
   if (px >= 0 && px <= W) {
@@ -188,6 +204,20 @@ function drawTimeline() {
     ctx.beginPath();
     ctx.moveTo(px - 5, 0); ctx.lineTo(px + 6, 0); ctx.lineTo(px + 0.5, 7);
     ctx.fill();
+  }
+}
+
+// Whole-video overview under the scrollbar: subtitles, problems and shot changes at a glance
+function drawOverview(W: number, H: number) {
+  const k = W / duration(), y = H - 10;
+  ctx.fillStyle = COL.ruler;
+  ctx.fillRect(0, y, W, 10);
+  ctx.fillStyle = COL.cut;
+  for (const t of state.cuts) ctx.fillRect(Math.round(t * k), y, 1, 10);
+  for (const c of state.cues) {
+    const lvl = readingStats(c).level;
+    ctx.fillStyle = lvl === 2 ? COL.dangerBorder : lvl === 1 ? COL.warnBorder : COL.cueBorder;
+    ctx.fillRect(Math.floor(c.start * k), lvl ? y + 1 : y + 3, Math.max(1, (c.end - c.start) * k), lvl ? 8 : 4);
   }
 }
 

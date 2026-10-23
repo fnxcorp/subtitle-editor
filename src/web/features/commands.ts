@@ -15,7 +15,7 @@ import {
 } from './editing.ts';
 import { fixCue, nextIssue } from './quality.ts';
 import { setView, fixAll, isReviewOpen } from './review.ts';
-import { flushSave, save, revealCopies } from './saving.ts';
+import { saveNow, revealCopies } from './saving.ts';
 import { exportFile } from './files.ts';
 import { openFind } from './find.ts';
 import { openSync, setSyncPoint } from './sync.ts';
@@ -91,7 +91,7 @@ export const COMMANDS: Command[] = [
   cmd('open-srt', ['Mod+KeyO'], () => $('#srt-input').click(), true),
   cmd('open-video', [], () => $('#video-input').click()),
   cmd('open-tr', [], () => { if (!settings.translation) setTranslation(true); $('#tr-input').click(); }),
-  cmd('save', ['Mod+KeyS'], async () => { await flushSave(); if (save.server) toast(T('save.saved', { path: save.path })); }, true),
+  cmd('save', ['Mod+KeyS'], saveNow, true),
   cmd('export', ['Mod+KeyE'], () => exportFile('srt', 'text'), true),
   cmd('export-vtt', [], () => exportFile('vtt', 'text')),
   cmd('export-tr', [], () => exportFile('srt', 'tr')),

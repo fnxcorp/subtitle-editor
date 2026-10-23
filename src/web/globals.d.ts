@@ -10,6 +10,8 @@ interface DesktopFile {
 interface DesktopBridge {
   onOpen(cb: (file: DesktopFile) => void): void;
   setLanguage(lang: string): void;
+  setSpellLang(lang: string): void;
+  register(file: File): Promise<string> | null; // null when the file has no path on disk
 }
 
 interface SaveFilePickerOptions {
@@ -17,9 +19,23 @@ interface SaveFilePickerOptions {
   types?: { description?: string; accept: Record<string, string[]> }[];
 }
 
+interface OpenFilePickerOptions {
+  multiple?: boolean;
+  types?: { description?: string; accept: Record<string, string[]> }[];
+}
+
+interface FileSystemHandle {
+  requestPermission?(descriptor: { mode: 'read' | 'readwrite' }): Promise<PermissionState>;
+}
+
+interface DataTransferItem {
+  getAsFileSystemHandle?(): Promise<FileSystemHandle | null>;
+}
+
 interface Window {
   desktop?: DesktopBridge; // only in the Electron app (see src/desktop/preload.ts)
   showSaveFilePicker?: (options?: SaveFilePickerOptions) => Promise<FileSystemFileHandle>;
+  showOpenFilePicker?: (options?: OpenFilePickerOptions) => Promise<FileSystemFileHandle[]>;
 }
 
 interface Navigator {

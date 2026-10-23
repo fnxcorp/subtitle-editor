@@ -19,6 +19,13 @@ export interface VideoSource {
   token?: string;  // opened from disk by the desktop app (served by server.ts)
 }
 
+// A subtitle file on disk that Ctrl+S writes: served by server.ts (desktop) or a browser file handle
+export interface DiskFile {
+  token?: string;
+  handle?: FileSystemFileHandle;
+  vtt: boolean;
+}
+
 export interface LiveSession {
   idx: number;          // subtitle being timed
   holding: Cue | null;  // subtitle whose key is held down

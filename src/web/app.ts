@@ -1,6 +1,7 @@
 // Composition root: imports every feature, wires them together and starts the app.
 // Start reading here: each feature lives in features/<name>.js; pure logic (no DOM) is in core/.
 import { state } from './core/state.ts';
+import { settings } from './core/settings.ts';
 import { on } from './core/events.ts';
 import { $, video } from './ui/dom.ts';
 import { hideToast } from './ui/toast.ts';
@@ -62,6 +63,7 @@ setZoom(state.pps, 0, 0);
 updateFrameUi();
 requestAnimationFrame(tick);
 window.desktop?.onOpen(openDesktopFile);
+window.desktop?.setSpellLang(settings.spellLang);
 openHelpOnFirstRun();
 connectServer();
 document.body.dataset.ready = '1'; // lets tests know the app has started

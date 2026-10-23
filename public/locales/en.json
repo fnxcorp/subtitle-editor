@@ -281,6 +281,12 @@
     "keysReset": "Shortcuts reset"
   },
   "tx": {
+    "nativeGroup": "whisper.cpp (desktop, faster, any file size)",
+    "nativeBase": "whisper.cpp · base (~140 MB)",
+    "nativeSmall": "whisper.cpp · small (~470 MB)",
+    "nativeMedium": "whisper.cpp · medium (~1.5 GB)",
+    "nativeLarge": "whisper.cpp · large-v3-turbo (~1.6 GB, most accurate)",
+    "native": "Transcribing with whisper.cpp… {n}%",
     "title": "Transcribe the audio",
     "intro": "Runs Whisper inside the app: the audio never leaves your computer. The model is downloaded the first time (and kept for next time). Works best in Chrome, Edge or the desktop app with GPU acceleration (WebGPU).",
     "model": "Model",
@@ -324,13 +330,16 @@
     "unsaved": "● Unsaved",
     "saving": "Saving the working copy…",
     "copy": "✓ Copy {time}",
-    "copyTitle": "Working copy (the original is never modified):\n{path}\nClick to open the folder",
+    "copyTitle": "Working copy (autosave; Ctrl+S also saves the original):\n{path}\nClick to open the folder",
     "local": "Browser only",
     "localTitle": "No local server: changes are saved in this browser. Export to get a file.",
     "failed": "Could not save the working copy; your changes are kept in the browser",
-    "saved": "Copy saved to {path} · the original was not touched"
+    "savedOriginal": "Saved to {path}",
+    "originalFailed": "Couldn't write the original file; your changes are in the working copy",
+    "saved": "Copy saved to {path}"
   },
   "toast": {
+    "noFfmpeg": "Install ffmpeg (brew install ffmpeg) for big videos, MKV files and every audio format",
     "undo": "Undo",
     "nothingUndo": "Nothing to undo",
     "nothingRedo": "Nothing to redo",
@@ -354,6 +363,7 @@
     "select": "Select a subtitle",
     "selectSome": "Select at least one subtitle",
     "noAudio": "Could not extract audio from this file for the waveform",
+    "noAudioWeb": ". Large files and some formats (MKV, AC-3) need the desktop app with ffmpeg.",
     "noValid": "No valid subtitles found in {name}",
     "loaded": "{n} subtitles loaded · you work on a copy, the original is never modified",
     "trLoaded": "Translation loaded: {matched} of {n} subtitles matched",
@@ -458,12 +468,18 @@
     "esc": "Esc"
   },
   "desktop": {
+    "unsaved": "Save changes to the original file?",
+    "unsavedDetail": "Some edits were not saved with Ctrl+S. They are kept in the working copy.",
+    "discard": "Close without saving",
+    "cancel": "Cancel",
     "file": "File",
     "open": "Open video or subtitles…",
     "view": "View",
     "media": "Video and subtitles",
     "all": "All files",
-    "copies": "Subtitle Editor - working copies"
+    "copies": "Subtitle Editor - working copies",
+    "addToDictionary": "Add to dictionary",
+    "noSuggestions": "No suggestions"
   },
   "help": {
     "title": "Help",

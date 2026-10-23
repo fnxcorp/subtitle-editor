@@ -1,14 +1,15 @@
-// Saving: the session in localStorage and the working copy on disk (through server.js).
-// The user's original file is never written: the final file only comes from Export.
+// Saving: autosave goes to localStorage and the working copy on disk (through server.js);
+// only an explicit save (Ctrl+S) writes the original files (subtitles and translation), when
+// they were opened from disk (desktop app) or with a file handle (Chrome/Edge).
 import { state } from '../core/state.ts';
 import { newCue } from '../core/cues.ts';
-import { toSRT } from '../core/subtitles.ts';
+import { toSRT, toVTT } from '../core/subtitles.ts';
 import { escapeHtml, hasTranslation } from '../core/text.ts';
 import { I18N, T } from '../core/i18n.ts';
 import { $ } from '../ui/dom.ts';
 import { toast } from '../ui/toast.ts';
 import { handleFiles } from './files.ts';
-import type { SavedSession } from '../core/types.ts';
+import type { DiskFile, Field, SavedSession } from '../core/types.ts';
 
 const STORAGE_KEY = 'subeditor:v1';
 
@@ -21,10 +22,13 @@ export const save: {
   path: string;                            // working copy on disk
   at: Date | null;                         // last successful save
   inflight: boolean;
-} = { version: 0, saved: 0, timer: undefined, server: null, path: '', at: null, inflight: false };
+  originalSaved: number;                   // version last written to the original files
+} = { version: 0, saved: 0, timer: undefined, server: null, path: '', at: null, inflight: false, originalSaved: 0 };
 
 // Filled from /api/info at startup
-export const serverInfo: { copiesDir?: string; ffmpeg?: boolean } = {};
+export const serverInfo: { copiesDir?: string; ffmpeg?: boolean; whisper?: boolean } = {};
+
+const TITLE = document.title;
 
 function sessionData(): SavedSession {
   return {
@@ -74,9 +78,49 @@ export async function flushSave() {
   }
 }
 
+// Edits not yet written to the original files with Ctrl+S
+export const originalDirty = () => !!(state.original || state.originalTr) && save.version !== save.originalSaved;
+export function markOriginalSaved(v = save.version) {
+  save.originalSaved = v;
+  updateSaveStatus();
+}
+
+async function writeDisk(f: DiskFile, field: Field): Promise<string> {
+  const text = f.vtt ? toVTT(field) : toSRT(field);
+  if (f.handle) {
+    if (f.handle.requestPermission && await f.handle.requestPermission({ mode: 'readwrite' }) !== 'granted') throw new Error('permission denied');
+    const w = await f.handle.createWritable();
+    await w.write(text);
+    await w.close();
+    return f.handle.name;
+  }
+  const res = await fetch('/api/save-original', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: f.token, text }) });
+  if (!res.ok) throw new Error(String(res.status));
+  return (await res.json()).path;
+}
+
+// Ctrl+S: working copy first, then the original files (subtitles and translation) when known
+export async function saveNow() {
+  await flushSave();
+  const targets: [DiskFile, Field][] = [];
+  if (state.original) targets.push([state.original, 'text']);
+  if (state.originalTr && hasTranslation()) targets.push([state.originalTr, 'tr']);
+  if (!targets.length || !state.cues.length) { if (save.server) toast(T('save.saved', { path: save.path })); return; }
+  const v = save.version;
+  try {
+    const paths: string[] = [];
+    for (const [f, field] of targets) paths.push(await writeDisk(f, field));
+    markOriginalSaved(v);
+    toast(T('save.savedOriginal', { path: paths.join(' · ') }));
+  } catch {
+    toast(T('save.originalFailed'), true);
+  }
+}
+
 export function updateSaveStatus() {
   const el = $('#save-status');
   const pending = save.version !== save.saved;
+  document.title = (originalDirty() ? '• ' : '') + TITLE;
   el.className = 'save-status ' + (pending ? 'pending' : save.server ? 'ok' : 'local');
   if (pending) {
     el.textContent = T('save.unsaved');
@@ -122,6 +166,11 @@ export async function connectServer() {
     Object.assign(serverInfo, await (await fetch('/api/info')).json());
     save.server = true;
     $('#copies-dir').textContent = serverInfo.copiesDir ?? '—';
+    if (window.desktop && !serverInfo.ffmpeg) {
+      try {
+        if (!localStorage.getItem('subeditor:ffmpegHint')) { toast(T('toast.noFfmpeg')); localStorage.setItem('subeditor:ffmpegHint', '1'); }
+      } catch {}
+    }
   } catch {
     save.server = false;
   }
@@ -131,6 +180,7 @@ export async function connectServer() {
 
 window.addEventListener('beforeunload', e => {
   saveLocal();
+  if (originalDirty()) { e.preventDefault(); e.returnValue = ''; } // the desktop app asks in will-prevent-unload
   if (save.version !== save.saved && state.cues.length) {
     const ok = save.server !== false && navigator.sendBeacon?.('/api/copy', new Blob([copyPayload()], { type: 'application/json' }));
     if (!ok) { e.preventDefault(); e.returnValue = ''; }

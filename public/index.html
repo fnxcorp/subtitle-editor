@@ -244,6 +244,7 @@
 
   <section class="timeline">
     <canvas id="timeline"></canvas>
+    <div id="timeline-scroll"><div></div></div>
     <div class="zoom">
       <span class="muted" data-i18n="tools.zoom"></span>
       <input type="range" id="zoom" min="0" max="100" value="50">
@@ -339,6 +340,12 @@
           <option value="tiny" data-i18n="tx.tiny"></option>
           <option value="base" selected data-i18n="tx.base"></option>
           <option value="small" data-i18n="tx.small"></option>
+          <optgroup id="tx-native" hidden>
+            <option value="native:base" data-i18n="tx.nativeBase"></option>
+            <option value="native:small" data-i18n="tx.nativeSmall"></option>
+            <option value="native:medium" data-i18n="tx.nativeMedium"></option>
+            <option value="native:large-v3-turbo" data-i18n="tx.nativeLarge"></option>
+          </optgroup>
         </select>
       </label>
       <label><span data-i18n="tx.language"></span>

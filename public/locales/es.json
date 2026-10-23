@@ -281,6 +281,12 @@
     "keysReset": "Atajos restablecidos"
   },
   "tx": {
+    "nativeGroup": "whisper.cpp (escritorio, más rápido, cualquier tamaño)",
+    "nativeBase": "whisper.cpp · base (~140 MB)",
+    "nativeSmall": "whisper.cpp · small (~470 MB)",
+    "nativeMedium": "whisper.cpp · medium (~1,5 GB)",
+    "nativeLarge": "whisper.cpp · large-v3-turbo (~1,6 GB, el más preciso)",
+    "native": "Transcribiendo con whisper.cpp… {n}%",
     "title": "Transcribir el audio",
     "intro": "Usa Whisper dentro de la app: el audio no sale de tu equipo. La primera vez se descarga el modelo (se guarda para las siguientes). Funciona mejor en Chrome, Edge o la app de escritorio con aceleración gráfica (WebGPU).",
     "model": "Modelo",
@@ -324,13 +330,16 @@
     "unsaved": "● Sin guardar",
     "saving": "Guardando la copia de trabajo…",
     "copy": "✓ Copia {time}",
-    "copyTitle": "Copia de trabajo (el original no se modifica):\n{path}\nClic para abrir la carpeta",
+    "copyTitle": "Copia de trabajo (autoguardado; Ctrl+S también guarda el original):\n{path}\nClic para abrir la carpeta",
     "local": "Solo en el navegador",
     "localTitle": "No hay servidor local: los cambios se guardan en este navegador. Exporta para tener un archivo.",
     "failed": "No se pudo guardar la copia de trabajo; los cambios quedan guardados en el navegador",
-    "saved": "Copia guardada en {path} · el original no se ha tocado"
+    "savedOriginal": "Guardado en {path}",
+    "originalFailed": "No se pudo escribir el archivo original; los cambios están en la copia de trabajo",
+    "saved": "Copia guardada en {path}"
   },
   "toast": {
+    "noFfmpeg": "Instala ffmpeg (brew install ffmpeg) para vídeos grandes, archivos MKV y cualquier formato de audio",
     "undo": "Deshacer",
     "nothingUndo": "Nada que deshacer",
     "nothingRedo": "Nada que rehacer",
@@ -354,6 +363,7 @@
     "select": "Selecciona un subtítulo",
     "selectSome": "Selecciona algún subtítulo",
     "noAudio": "No se pudo extraer el audio de este archivo para la forma de onda",
+    "noAudioWeb": ". Los archivos grandes y algunos formatos (MKV, AC-3) necesitan la app de escritorio con ffmpeg.",
     "noValid": "No se encontraron subtítulos válidos en {name}",
     "loaded": "{n} subtítulos cargados · se trabaja sobre una copia, el original no se modifica",
     "trLoaded": "Traducción cargada: {matched} de {n} subtítulos emparejados",
@@ -458,12 +468,18 @@
     "esc": "Esc"
   },
   "desktop": {
+    "unsaved": "¿Guardar los cambios en el archivo original?",
+    "unsavedDetail": "Hay cambios sin guardar con Ctrl+S. Se conservan en la copia de trabajo.",
+    "discard": "Cerrar sin guardar",
+    "cancel": "Cancelar",
     "file": "Archivo",
     "open": "Abrir vídeo o subtítulos…",
     "view": "Ver",
     "media": "Vídeo y subtítulos",
     "all": "Todos los archivos",
-    "copies": "Subtitle Editor - working copies"
+    "copies": "Subtitle Editor - working copies",
+    "addToDictionary": "Añadir al diccionario",
+    "noSuggestions": "Sin sugerencias"
   },
   "help": {
     "title": "Ayuda",

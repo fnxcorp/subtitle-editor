@@ -10,6 +10,7 @@ import { $ } from '../ui/dom.ts';
 import { toast } from '../ui/toast.ts';
 import { getTime } from './playback.ts';
 import { decodeAudio } from './waveform.ts';
+import { serverInfo } from './saving.ts';
 import type { Cue } from '../core/types.ts';
 
 interface Segment { start: number; end: number; text: string }
@@ -19,10 +20,13 @@ type WorkerReply =
   | { type: 'result'; chunks: { text?: string; timestamp?: [number | null, number | null] }[] }
   | { type: 'error'; message: string };
 
-const tx: { worker: Worker | null; running: boolean; cancel: boolean; reject: ((err: Error) => void) | null } =
-  { worker: null, running: false, cancel: false, reject: null };
+const tx: { worker: Worker | null; running: boolean; cancel: boolean; reject: ((err: Error) => void) | null; abort: AbortController | null } =
+  { worker: null, running: false, cancel: false, reject: null, abort: null };
 const SR = 16000;
 const WINDOW_S = 300;
+
+// whisper.cpp language codes for the names used by Transformers.js
+const LANG_CODES: Record<string, string> = { spanish: 'es', english: 'en', french: 'fr', portuguese: 'pt', italian: 'it', german: 'de', catalan: 'ca' };
 
 // Phrases Whisper tends to hallucinate on silence or music (Spanish and English)
 const HALLUCINATIONS = /amara\.org|subt[ií]tulos (realizados|por|creados)|suscr[ií]bete|gracias por ver|thanks for watching|please subscribe/i;
@@ -153,43 +157,13 @@ export async function runTranscription() {
   $<HTMLButtonElement>('#tx-start').disabled = true;
   $('#tx-cancel').hidden = false;
   try {
-    setTxStatus(T('tx.extracting'), 0);
-    const audio = await decodeAudio(SR);
-    let pcm = audio.getChannelData(0);
-    if (audio.numberOfChannels > 1) {
-      const n = audio.numberOfChannels, mix = new Float32Array(audio.length);
-      for (let c = 0; c < n; c++) { const d = audio.getChannelData(c); for (let i = 0; i < d.length; i++) mix[i] += d[i] / n; }
-      pcm = mix;
-    }
-    if (tx.cancel) throw new Error('cancelled');
-    tx.worker = new Worker(new URL('../workers/whisper-worker.js', import.meta.url), { type: 'module' });
-    setTxStatus(T('tx.preparing'), 0);
-    const { device } = await workerCall<Extract<WorkerReply, { type: 'ready' }>>({ type: 'load', model, device: await pickDevice() });
-    const total = pcm.length / SR;
-    const segs: Segment[] = [];
-    let pos = startAt;
-    while (pos < total - 0.5) {
-      if (tx.cancel) throw new Error('cancelled');
-      let end = Math.min(total, pos + WINDOW_S);
-      if (end < total) end = quietBoundary(pcm, end);
-      const slice = pcm.slice(Math.floor(pos * SR), Math.floor(end * SR));
-      setTxStatus(T('tx.chunk', { from: fmt(pos).slice(0, 8), to: fmt(end).slice(0, 8), total: fmt(total).slice(0, 8), device: device === 'webgpu' ? 'GPU' : T('tx.cpu') }),
-        (pos - startAt) / (total - startAt) * 100);
-      const res = await workerCall<Extract<WorkerReply, { type: 'result' }>>({ type: 'run', audio: slice, language }, [slice.buffer]);
-      for (const ch of res.chunks) {
-        const [s, e] = ch.timestamp || [0, null];
-        const st = pos + (s ?? 0);
-        const en = pos + (e ?? Math.min(end - pos, (s ?? 0) + 5));
-        segs.push({ start: st, end: Math.max(en, st + 0.3), text: ch.text || '' });
-      }
-      pos = end;
-    }
+    const segs = model.startsWith('native:') ? await nativeSegments(model.slice(7), language, startAt) : await webSegments(model, language, startAt);
     setTxStatus(T('tx.creating'), 100);
     applyTranscription(segmentsToCues(cleanSegments(segs, $<HTMLInputElement>('#tx-sounds').checked)), mode, startAt);
     $<HTMLDialogElement>('#transcribe').close();
   } catch (e) {
     const err = e as Error;
-    if (err.message === 'cancelled') {
+    if (err.message === 'cancelled' || tx.cancel) {
       toast(T('tx.cancelled'));
       setTxStatus(T('tx.cancelledStatus'));
     } else {
@@ -200,6 +174,7 @@ export async function runTranscription() {
   } finally {
     tx.worker?.terminate();
     tx.worker = null;
+    tx.abort = null;
     tx.running = false;
     $<HTMLButtonElement>('#tx-start').disabled = false;
     $('#tx-cancel').hidden = true;
@@ -207,9 +182,76 @@ export async function runTranscription() {
   }
 }
 
+// whisper.cpp through the local server (desktop app): any file size, large models, Metal/CUDA
+async function nativeSegments(model: string, language: string, startAt: number): Promise<Segment[]> {
+  tx.abort = new AbortController();
+  setTxStatus(T('tx.preparing'), 0);
+  const res = await fetch(`/api/whisper/${state.video!.token}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: tx.abort.signal,
+    body: JSON.stringify({ model, language: LANG_CODES[language] ?? '', from: startAt }),
+  });
+  if (!res.ok || !res.body) throw new Error((await res.json().catch(() => ({}))).error || String(res.status));
+  let buf = '';
+  for await (const chunk of res.body.pipeThrough(new TextDecoderStream()) as unknown as AsyncIterable<string>) {
+    buf += chunk;
+    const lines = buf.split('\n');
+    buf = lines.pop()!;
+    for (const line of lines.filter(Boolean)) {
+      const msg = JSON.parse(line) as { download?: number; extracting?: boolean; progress?: number; segments?: Segment[]; error?: string };
+      if (msg.error) throw new Error(msg.error);
+      if (msg.segments) return msg.segments;
+      if (msg.download != null) setTxStatus(T('tx.downloading', { file: model }), msg.download);
+      else if (msg.extracting) setTxStatus(T('tx.extracting'), 0);
+      else if (msg.progress != null) setTxStatus(T('tx.native', { n: msg.progress }), msg.progress);
+    }
+  }
+  throw new Error(T('tx.failed'));
+}
+
+// Transformers.js in a worker, in blocks of about 5 minutes cut at silences
+async function webSegments(model: string, language: string, startAt: number): Promise<Segment[]> {
+  setTxStatus(T('tx.extracting'), 0);
+  const audio = await decodeAudio(SR);
+  let pcm = audio.getChannelData(0);
+  if (audio.numberOfChannels > 1) {
+    const n = audio.numberOfChannels, mix = new Float32Array(audio.length);
+    for (let c = 0; c < n; c++) { const d = audio.getChannelData(c); for (let i = 0; i < d.length; i++) mix[i] += d[i] / n; }
+    pcm = mix;
+  }
+  if (tx.cancel) throw new Error('cancelled');
+  tx.worker = new Worker(new URL('../workers/whisper-worker.js', import.meta.url), { type: 'module' });
+  setTxStatus(T('tx.preparing'), 0);
+  const { device } = await workerCall<Extract<WorkerReply, { type: 'ready' }>>({ type: 'load', model, device: await pickDevice() });
+  const total = pcm.length / SR;
+  const segs: Segment[] = [];
+  let pos = startAt;
+  while (pos < total - 0.5) {
+    if (tx.cancel) throw new Error('cancelled');
+    let end = Math.min(total, pos + WINDOW_S);
+    if (end < total) end = quietBoundary(pcm, end);
+    const slice = pcm.slice(Math.floor(pos * SR), Math.floor(end * SR));
+    setTxStatus(T('tx.chunk', { from: fmt(pos).slice(0, 8), to: fmt(end).slice(0, 8), total: fmt(total).slice(0, 8), device: device === 'webgpu' ? 'GPU' : T('tx.cpu') }),
+      (pos - startAt) / (total - startAt) * 100);
+    const res = await workerCall<Extract<WorkerReply, { type: 'result' }>>({ type: 'run', audio: slice, language }, [slice.buffer]);
+    for (const ch of res.chunks) {
+      const [s, e] = ch.timestamp || [0, null];
+      const st = pos + (s ?? 0);
+      const en = pos + (e ?? Math.min(end - pos, (s ?? 0) + 5));
+      segs.push({ start: st, end: Math.max(en, st + 0.3), text: ch.text || '' });
+    }
+    pos = end;
+  }
+  return segs;
+}
+
 export function openTranscribe() {
   if (!state.video) return toast(T('toast.openVideo'), true);
   if (!tx.running) $('#tx-progress').hidden = true;
+  const native = $<HTMLOptGroupElement>('#tx-native');
+  native.label = T('tx.nativeGroup');
+  native.hidden = !(serverInfo.whisper && state.video.token);
+  const model = $<HTMLSelectElement>('#tx-model');
+  if (native.hidden && model.value.startsWith('native:')) model.value = 'base';
   $<HTMLDialogElement>('#transcribe').showModal();
 }
 
@@ -218,6 +260,7 @@ $('#tx-close').addEventListener('click', () => $<HTMLDialogElement>('#transcribe
 $('#tx-start').addEventListener('click', runTranscription);
 $('#tx-cancel').addEventListener('click', () => {
   tx.cancel = true;
+  tx.abort?.abort();
   tx.worker?.terminate();
   tx.reject?.(new Error('cancelled'));
 });

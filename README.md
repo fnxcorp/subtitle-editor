@@ -1,8 +1,7 @@
 # Subtitle Editor
 
 Edit `.srt` / `.vtt` subtitles in sync with a video, entirely on your computer: local and private,
-with no uploads. **Your original file is never modified.** You work on a copy that saves itself, and
-export the final file when you're done.
+with no uploads. Autosave goes to a working copy; **Ctrl+S** writes the original file.
 
 - **Sync**: two-point sync (fixes offset and speed at once), live timing (hold Space while each line
   is spoken), shift, FPS conversion, and a timeline that snaps to the playhead, neighbours and shot changes.
@@ -10,6 +9,7 @@ export the final file when you're done.
   balance lines, top position, find and replace, loop, frame stepping.
 - **Quality**: reading speed, line length, duration, gaps, overlaps and shot changes, with a Review tab
   and one-click fixes.
+- **Spell check** in the subtitle boxes, with right-click suggestions in the desktop app.
 - **Translate** side by side, **transcribe** with Whisper running locally, **detect shot changes**.
 - **Command palette** (Cmd/Ctrl+K), remappable shortcuts, English and Spanish UI, built-in help (F1).
 
@@ -27,14 +27,37 @@ npm run app -- movie.mp4 movie.srt
 
 Requirements: Node 26.11+. Written in TypeScript (strict); `npm start` and `npm run app` compile first.
 
-Video formats: whatever the browser plays (MP4 H.264/AAC, WebM, MOV). In the desktop app, MKV and
-other formats are converted to MP4 automatically if ffmpeg is installed (`brew install ffmpeg`).
+Video formats: whatever the browser plays (MP4 H.264/AAC, WebM, MOV).
+
+### Desktop app and ffmpeg
+
+The desktop app is the recommended way to work with real videos. Files opened from the File menu,
+dropped on the window or chosen with the in-page buttons are read from disk, not loaded into memory,
+so multi-GB videos work. With ffmpeg installed (`brew install ffmpeg`) it also:
+
+- converts MKV and other formats the browser can't play to MP4 automatically;
+- extracts the audio for the waveform and transcription from any file, of any size or codec
+  (AC-3, DTS…). The browser version reads the whole file and can't decode files over 1.5 GB.
+
+Without ffmpeg the desktop app shows a one-time hint.
+
+### Transcription
+
+**Transcribe** runs Whisper locally in one of two engines:
+
+- **In the app** (Transformers.js, tiny / base / small): works everywhere, uses WebGPU when available.
+- **whisper.cpp** (desktop app, `brew install whisper-cpp`): base, small, medium and large-v3-turbo,
+  much faster (Metal on Apple Silicon) and for files of any length. The model is downloaded once from
+  Hugging Face to `~/.cache/subtitle-editor/whisper/`. These options appear only when `whisper-cli` is
+  installed and the video was opened in the desktop app.
 
 ## Project structure
 
 ```
 src/
-  server/server.ts        Local server: serves public/, saves working copies, streams desktop files
+  server/server.ts        Local server: serves public/, saves working copies and the original (Ctrl+S),
+                          streams desktop files, extracts audio and remuxes video with ffmpeg,
+                          runs whisper.cpp
   desktop/                Electron wrapper (main process + preload)
   web/                    The app (browser), compiled to public/js/
     main.ts               Entry point: loads the language, then app.ts
@@ -82,9 +105,9 @@ npm run build                              # compile src/ → public/js/ and bui
 npm run check                              # type-check + lint + unit tests (run before every commit)
 npm run lint                               # ESLint with typescript-eslint
 npm test                                   # unit tests
-npm run test:e2e                           # end-to-end (opens a window briefly)
+npm run test:e2e                           # end-to-end (opens a window briefly; exits 1 if any check fails)
 CLIP=/path/video.mp4 npm run test:e2e      # also runs the video tests (waveform, cuts, fps, live timing)
-WHISPER=1 CLIP=/path/video.mp4 npm run test:e2e   # also runs a real transcription (downloads ~40 MB once)
+WHISPER=1 CLIP=/path/video.mp4 npm run test:e2e   # also runs real transcriptions: in-app (~40 MB once) and whisper.cpp if installed (~140 MB once)
 npm run dist                               # package the desktop app (.dmg / .exe)
 ```
 
@@ -93,7 +116,23 @@ A good test clip with shot changes, speech and audio: <https://media.w3.org/2010
 ## Saving
 
 Every change goes to `working-copies/<name>.working-copy.srt`, plus a snapshot in `history/` every
-5 minutes, and to the browser's storage. Use **Export ▾** for the final SRT / WebVTT.
+5 minutes, and to the browser's storage. **Ctrl+S** also writes the original subtitle file, and the
+translation file if one was opened, in the same format (SRT or WebVTT):
+
+- **Desktop app**: always. The untouched original is kept once as `<name>.original.srt` in the
+  working copies folder.
+- **Chrome / Edge**: when the file was opened with **Open SRT** or dropped on the window (the browser
+  asks for permission the first time). Other browsers can't write files: use **Export ▾**.
+
+A `•` in the window title means there are edits not yet saved with Ctrl+S; closing the app then asks first.
+
+## Spell check
+
+The subtitle boxes are spell-checked in the language chosen in ⚙ Settings → Spell-check language.
+In the desktop app, right-click a misspelled word for suggestions or **Add to dictionary**. On
+Windows and Linux it uses Chromium's open-source Hunspell dictionaries (downloaded once per
+language); on macOS it uses the system spell checker, which detects the language by itself (so the
+setting is hidden there).
 
 ## Languages
 

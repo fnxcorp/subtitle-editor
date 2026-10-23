@@ -15,7 +15,7 @@ npm run app               # build + Electron desktop app
 npm run check             # type-check (3 tsconfigs) + ESLint + unit tests
 npm run test:e2e          # build + end-to-end tests in a real Electron window
 CLIP=/path/video.mp4 npm run test:e2e             # + video tests (waveform, cuts, live timing, fps)
-WHISPER=1 CLIP=/path/video.mp4 npm run test:e2e   # + real Whisper transcription
+WHISPER=1 CLIP=/path/video.mp4 npm run test:e2e   # + real Whisper transcription (in-app and whisper.cpp)
 ```
 
 A good test clip with cuts, speech and audio: https://media.w3.org/2010/05/sintel/trailer.mp4
@@ -30,15 +30,19 @@ Node 26.11, TypeScript 6.0.3, Electron 44.7.0, ESLint 10.12 + typescript-eslint 
 
 ## Hard rules
 
-- **Never modify the user's original subtitle file.** Changes go to a working copy
+- **Autosave never touches the user's original subtitle file.** It goes to a working copy
   (`working-copies/<name>.working-copy.srt`, legacy `copias/` folder is reused if present) plus
-  `history/` snapshots every 5 min, and to localStorage. The final file only comes from Export.
+  `history/` snapshots every 5 min, and to localStorage. Only an explicit save (Ctrl+S, `saveNow`)
+  writes the original subtitle/translation files (`state.original`, `state.originalTr`): through the
+  server in the desktop app (the first write keeps `<name>.original.<ext>` in the copies folder) or a
+  File System Access handle in Chrome/Edge. Otherwise the final file comes from Export.
 - **No hard-coded UI text.** Every visible string goes through `T('key', vars)` (from `core/i18n.js`) or a `data-i18n*`
   attribute, with the key added to **both** `public/locales/en.json` and `public/locales/es.json`.
 - The i18n function is `T` (uppercase): many functions use a local variable `t` for time.
 - Plurals: a key whose value is `{ "one": "...", "other": "..." }` picks the form from `vars.n`.
-- Everything stays local: no uploads. Network is only used to download the Whisper model
-  (Hugging Face) and Transformers.js (jsDelivr, pinned to 3.8.1).
+- Everything stays local: no uploads. Network is only used to download the Whisper models
+  (Hugging Face, also the whisper.cpp ggml models), Transformers.js (jsDelivr, pinned to 3.8.1) and, in the desktop app on
+  Windows/Linux, Chromium's Hunspell spell-check dictionaries (once per language).
 
 ## Architecture
 
@@ -66,12 +70,15 @@ TypeScript (strict), native ES modules, no bundler. Full map in README.md → "P
 - Keep it dependency-free in the browser; Electron is the only npm dependency (devDependency).
   Libraries are allowed if they clearly pay off; pin exact versions at least two weeks old.
 - Any change to cues: `pushHistory()` before, `commit()` after (app.js re-renders list, overlay, timeline, review, find and saves).
-- New pure logic gets a unit test in `test/unit.test.mts`; user-visible flows are covered by `test/e2e.ts`.
+- New pure logic gets a unit test in `test/unit.test.mts`; user-visible flows are covered by `test/e2e.ts`
+  (each `run(name, code, expect)` asserts its result; the process exits 1 on any failure).
 - `npm run check` must pass before committing; ESLint config is `eslint.config.mjs`.
 - Mass/destructive actions show `toast(msg, { undo: true })` instead of confirm dialogs.
 - Settings live in `settings` (localStorage `subeditor:settings`); defaults in `DEFAULTS` in `app.js`.
 
-## Planned
+## Optional native tools (desktop app, found on PATH; Homebrew dirs are added for Finder launches)
 
-- Native Whisper engine through Electron (whisper.cpp or similar) for mp3 → subtitles with large
-  models, as an optional backend next to the in-browser one. Ask the user which tool they mean.
+- ffmpeg: remux (`/api/remux`), audio for waveform/transcription (`/api/audio`, any size or codec).
+- whisper.cpp (`whisper-cli`, `brew install whisper-cpp`): `/api/whisper/<token>` streams NDJSON
+  progress, models in `~/.cache/subtitle-editor/whisper/`. The "whisper.cpp" model group in the
+  Transcribe dialog only shows when it is installed and the video has a desktop token.

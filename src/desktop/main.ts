@@ -62,6 +62,30 @@ function buildMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
+// Chromium's spell checker: Hunspell dictionaries on Windows/Linux (downloaded once), the system one on macOS
+ipcMain.handle('register-file', (_e, p: string) => registerFile(p));
+
+ipcMain.on('set-spell-lang', (e, lang: string) => {
+  if (process.platform === 'darwin') return; // macOS picks the language itself
+  const avail = e.sender.session.availableSpellCheckerLanguages;
+  const code = avail.includes(lang) ? lang : avail.find(l => l === `${lang}-US`) ?? avail.find(l => l.startsWith(lang + '-'));
+  if (code) e.sender.session.setSpellCheckerLanguages([code]);
+});
+
+// Right-click menu in text fields: spelling suggestions, add to dictionary, cut/copy/paste
+function showContextMenu(params: Electron.ContextMenuParams) {
+  if (!params.isEditable && !params.selectionText) return;
+  const wc = win!.webContents;
+  const items: MenuItemConstructorOptions[] = [];
+  if (params.misspelledWord) {
+    for (const s of params.dictionarySuggestions) items.push({ label: s, click: () => wc.replaceMisspelling(s) });
+    if (!params.dictionarySuggestions.length) items.push({ label: L().noSuggestions, enabled: false });
+    items.push({ label: L().addToDictionary, click: () => wc.session.addWordToSpellCheckerDictionary(params.misspelledWord) }, { type: 'separator' });
+  }
+  items.push({ role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { type: 'separator' }, { role: 'selectAll' });
+  Menu.buildFromTemplate(items).popup({ window: win! });
+}
+
 ipcMain.on('set-language', (_e, lang: string) => {
   fs.writeFileSync(langFile(), lang === 'es' ? 'es' : 'en');
   buildMenu();
@@ -78,6 +102,12 @@ app.whenReady().then(async () => {
     title: 'Subtitle Editor', backgroundColor: '#0f1115',
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true },
   });
+  // The page blocks closing while edits aren't written to the original file (Ctrl+S)
+  win.webContents.on('will-prevent-unload', e => {
+    const choice = dialog.showMessageBoxSync(win!, { type: 'question', buttons: [L().discard, L().cancel], defaultId: 1, cancelId: 1, message: L().unsaved, detail: L().unsavedDetail });
+    if (choice === 0) e.preventDefault(); // close anyway
+  });
+  win.webContents.on('context-menu', (_e, params) => showContextMenu(params));
   win.webContents.setWindowOpenHandler(({ url: u }) => { shell.openExternal(u); return { action: 'deny' }; });
   await win.loadURL(url);
   const files = [...pending, ...process.argv.slice(app.isPackaged ? 1 : 2)];

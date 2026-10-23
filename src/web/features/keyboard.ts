@@ -12,7 +12,8 @@ document.addEventListener('keydown', e => {
   if (!command) return;
   // Keys without Alt/Cmd/Ctrl (Space, arrows, Delete…) never fire while typing
   const plain = !/(^|\+)(Meta|Ctrl|Alt)\+/.test(combo) && !/^(Shift\+)?(Escape|F\d+)$/.test(combo);
-  if (isTyping(e.target) && (plain || !command.text)) return;
+  // "Dead" = an accent key (Mac ⌥E → ´, ⌥N → ˜…): let the system compose the character
+  if (isTyping(e.target) && (plain || !command.text || e.key === 'Dead')) return;
   e.preventDefault();
   command.run();
 });
