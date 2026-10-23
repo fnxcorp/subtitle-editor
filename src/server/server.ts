@@ -1,6 +1,6 @@
 // Minimal local server, no dependencies. Editing happens in the browser; the server only
-// serves the UI, stores the working copies (it never touches the original file) and, in the
-// desktop app, streams the videos opened from disk.
+// serves the UI, stores the working copies (autosave), writes the original file only on an explicit
+// save (Ctrl+S) and, in the desktop app, streams the files opened from disk.
 import * as http from 'node:http';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -24,6 +24,14 @@ const TYPES: Record<string, string> = {
 };
 const BACKUP_EVERY_MS = 5 * 60 * 1000;
 const BACKUPS_KEPT = 30;
+
+const WHISPER_MODELS = path.join(os.homedir(), '.cache', 'subtitle-editor', 'whisper');
+const WHISPER_MODEL = /^(tiny|base|small|medium|large-v3-turbo)$/;
+
+// Apps started from Finder get a minimal PATH without Homebrew, where ffmpeg and whisper-cli live
+for (const dir of ['/opt/homebrew/bin', '/usr/local/bin']) {
+  if (process.platform !== 'win32' && !process.env.PATH?.split(path.delimiter).includes(dir)) process.env.PATH += path.delimiter + dir;
+}
 
 const media = new Map<string, string>(); // token -> absolute path (only files opened from the desktop app)
 let hasFfmpeg: boolean | null = null;
@@ -84,6 +92,15 @@ function saveCopy(dir: string, { name, srt, tr }: { name?: string; srt: string; 
   return file;
 }
 
+// Explicit save over the original subtitle file (desktop only); keeps the untouched original once as a backup
+function saveOriginal(dir: string, file: string, text: string) {
+  const backup = path.join(dir, `${safeBase(path.basename(file))}.original${path.extname(file)}`);
+  fs.mkdirSync(dir, { recursive: true });
+  if (!fs.existsSync(backup)) fs.copyFileSync(file, backup);
+  fs.writeFileSync(file + '.tmp', text);
+  fs.renameSync(file + '.tmp', file);
+}
+
 function serveMedia(req: http.IncomingMessage, res: http.ServerResponse, file: string) {
   fs.stat(file, (err, st) => {
     if (err) { res.writeHead(404); return res.end(); }
@@ -101,6 +118,71 @@ function serveMedia(req: http.IncomingMessage, res: http.ServerResponse, file: s
       fs.createReadStream(file).pipe(res);
     }
   });
+}
+
+function which(names: string[]): string | null {
+  const ext = process.platform === 'win32' ? '.exe' : '';
+  for (const dir of (process.env.PATH || '').split(path.delimiter)) {
+    for (const n of names) if (fs.existsSync(path.join(dir, n + ext))) return path.join(dir, n + ext);
+  }
+  return null;
+}
+const whisperBin = () => which(['whisper-cli', 'whisper-cpp']);
+
+// Downloads a whisper.cpp model once (Hugging Face), reporting progress
+async function whisperModel(model: string, progress: (pct: number) => void, signal: AbortSignal): Promise<string> {
+  const file = path.join(WHISPER_MODELS, `ggml-${model}.bin`);
+  if (fs.existsSync(file)) return file;
+  fs.mkdirSync(WHISPER_MODELS, { recursive: true });
+  const res = await fetch(`https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-${model}.bin`, { signal });
+  if (!res.ok || !res.body) throw new Error(`model download failed (${res.status})`);
+  const total = Number(res.headers.get('content-length')) || 0;
+  const out = fs.createWriteStream(file + '.part');
+  let got = 0, last = 0;
+  try {
+    for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
+      got += chunk.length;
+      if (!out.write(chunk)) await new Promise(r => out.once('drain', r));
+      if (total && got - last > total / 100) { last = got; progress(got / total * 100); }
+    }
+  } finally {
+    await new Promise(r => out.end(r));
+  }
+  fs.renameSync(file + '.part', file);
+  return file;
+}
+
+function runProcess(cmd: string, args: string[], signal: AbortSignal, onStderr?: (line: string) => void): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const p = spawn(cmd, args, { stdio: ['ignore', 'ignore', 'pipe'], signal });
+    let tail = '';
+    p.stderr.on('data', (d: Buffer) => { const s = d.toString(); tail = (tail + s).slice(-500); s.split(/\r?\n/).forEach(l => onStderr?.(l)); });
+    p.on('error', reject);
+    p.on('exit', code => (code === 0 ? resolve() : reject(new Error(`${path.basename(cmd)} failed: ${tail.trim().split('\n').pop()}`))));
+  });
+}
+
+// whisper.cpp on a file opened from disk: ffmpeg → 16 kHz WAV → whisper-cli JSON → segments in seconds
+async function whisperTranscribe(file: string, opts: { model: string; language: string; from: number }, send: (msg: object) => void, signal: AbortSignal) {
+  const bin = whisperBin();
+  if (!bin) throw new Error('whisper-cli is not installed (brew install whisper-cpp)');
+  if (!(await checkFfmpeg())) throw new Error('ffmpeg is not installed');
+  const model = await whisperModel(opts.model, pct => send({ download: pct }), signal);
+  const tmp = path.join(os.tmpdir(), 'subtitle-editor', `whisper-${crypto.randomBytes(6).toString('hex')}`);
+  fs.mkdirSync(path.dirname(tmp), { recursive: true });
+  try {
+    send({ extracting: true });
+    await runProcess('ffmpeg', ['-y', '-v', 'error', '-ss', String(opts.from), '-i', file, '-vn', '-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le', tmp + '.wav'], signal);
+    const threads = String(Math.max(1, os.availableParallelism() - 1));
+    await runProcess(bin, ['-m', model, '-f', tmp + '.wav', '-l', opts.language || 'auto', '-t', threads, '-oj', '-of', tmp, '-pp'], signal, line => {
+      const m = /progress\s*=\s*(\d+)%/.exec(line);
+      if (m) send({ progress: +m[1] });
+    });
+    const out = JSON.parse(fs.readFileSync(tmp + '.json', 'utf8')) as { transcription?: { offsets: { from: number; to: number }; text: string }[] };
+    return (out.transcription || []).map(s => ({ start: opts.from + s.offsets.from / 1000, end: opts.from + s.offsets.to / 1000, text: s.text }));
+  } finally {
+    for (const ext of ['.wav', '.json']) fs.rmSync(tmp + ext, { force: true });
+  }
 }
 
 function checkFfmpeg(): Promise<boolean> {
@@ -150,13 +232,37 @@ export function start({ port = Number(process.env.PORT) || 5173, copiesDir = pro
 
     try {
       if (p === '/api/info') {
-        return json(res, 200, { copiesDir, ffmpeg: await checkFfmpeg() });
+        return json(res, 200, { copiesDir, ffmpeg: await checkFfmpeg(), whisper: !!whisperBin() });
       }
       if (p === '/api/copy' && req.method === 'POST') {
         const data = JSON.parse(await readBody(req));
         if (typeof data.srt !== 'string') return json(res, 400, { error: 'srt required' });
         const file = saveCopy(copiesDir, data);
         return json(res, 200, { path: file, savedAt: Date.now() });
+      }
+      if (p === '/api/save-original' && req.method === 'POST') {
+        const data = JSON.parse(await readBody(req));
+        const file = media.get(data.token);
+        if (!file || !/\.(srt|vtt)$/i.test(file) || typeof data.text !== 'string') return json(res, 400, { error: 'not a subtitle file opened from disk' });
+        saveOriginal(copiesDir, file, data.text);
+        return json(res, 200, { path: file });
+      }
+      // Streams NDJSON: { download } / { extracting } / { progress } updates, then { segments } or { error }
+      if (p.startsWith('/api/whisper/') && req.method === 'POST') {
+        const file = media.get(p.split('/')[3]);
+        const data = JSON.parse(await readBody(req));
+        if (!file) return json(res, 404, { error: 'unknown file' });
+        if (!WHISPER_MODEL.test(data.model) || !/^[a-z]{0,3}$/.test(data.language || '')) return json(res, 400, { error: 'bad model or language' });
+        const abort = new AbortController();
+        res.on('close', () => abort.abort());
+        res.writeHead(200, { 'Content-Type': 'application/x-ndjson; charset=utf-8' });
+        const send = (msg: object) => res.write(JSON.stringify(msg) + '\n');
+        try {
+          send({ segments: await whisperTranscribe(file, { model: data.model, language: data.language || '', from: Math.max(0, Number(data.from) || 0) }, send, abort.signal) });
+        } catch (err) {
+          send({ error: String((err as Error).message || err) });
+        }
+        return res.end();
       }
       if (p === '/api/reveal' && req.method === 'POST') {
         fs.mkdirSync(copiesDir, { recursive: true });
@@ -170,6 +276,18 @@ export function start({ port = Number(process.env.PORT) || 5173, copiesDir = pro
         if (!(await checkFfmpeg())) return json(res, 400, { error: 'ffmpeg is not installed' });
         const out = await remux(file);
         return json(res, 200, { url: registerFile(out) });
+      }
+      // Mono float32 PCM through ffmpeg, for audio the browser can't decode (waveform, transcription)
+      if (p.startsWith('/api/audio/')) {
+        const file = media.get(p.split('/')[3]);
+        if (!file) return json(res, 404, { error: 'unknown file' });
+        if (!(await checkFfmpeg())) return json(res, 400, { error: 'ffmpeg is not installed' });
+        const rate = String(Math.min(48000, Math.max(1000, Number(url.searchParams.get('rate')) || 16000)));
+        const ff = spawn('ffmpeg', ['-v', 'error', '-i', file, '-vn', '-ac', '1', '-ar', rate, '-f', 'f32le', '-'], { stdio: ['ignore', 'pipe', 'ignore'] });
+        res.writeHead(200, { 'Content-Type': 'application/octet-stream' });
+        ff.stdout.pipe(res);
+        req.on('close', () => ff.kill());
+        return;
       }
       if (p.startsWith('/media/')) {
         const file = media.get(p.split('/')[2]);

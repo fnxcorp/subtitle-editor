@@ -9,6 +9,7 @@ export function setSetting<K extends keyof Settings>(key: K, value: Settings[K])
   settings[key] = value;
   saveSettings();
   if (key === 'maxCps') syncMaxCps();
+  if (key === 'spellLang') window.desktop?.setSpellLang(String(value));
   commit();
 }
 

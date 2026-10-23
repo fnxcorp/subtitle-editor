@@ -2,7 +2,7 @@
 import { settings, saveSettings } from '../core/settings.ts';
 import { escapeHtml } from '../core/text.ts';
 import { I18N, T } from '../core/i18n.ts';
-import { $, $$ } from '../ui/dom.ts';
+import { $, $$, IS_MAC } from '../ui/dom.ts';
 import { toast } from '../ui/toast.ts';
 import { COMMANDS, keysFor, comboOf, prettyCombo, setShortcut, resetShortcuts } from './commands.ts';
 import { setSetting } from './preferences.ts';
@@ -46,6 +46,8 @@ for (const k of NUM_SETTINGS) {
 }
 select('#s-fps').addEventListener('change', () => setSetting('fps', +select('#s-fps').value));
 input('#s-frameExport').addEventListener('change', () => setSetting('frameExport', input('#s-frameExport').checked));
+// The macOS spell checker picks the language itself and ignores this setting
+if (window.desktop && IS_MAC) select('#s-spellLang').closest('label')!.hidden = true;
 select('#s-spellLang').addEventListener('change', () => setSetting('spellLang', select('#s-spellLang').value));
 // Changing the language reloads the app (after saving the working copy)
 select('#s-lang').addEventListener('change', async () => {

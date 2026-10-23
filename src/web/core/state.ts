@@ -1,5 +1,5 @@
 // Shared mutable app state. Modules read and write it directly; after changing cues call commit().
-import type { Cue, LiveSession, SavedSession, VideoSource } from './types.ts';
+import type { Cue, DiskFile, LiveSession, SavedSession, VideoSource } from './types.ts';
 
 export const MIN_DUR = 0.1; // shortest allowed subtitle, in seconds
 
@@ -10,6 +10,8 @@ export interface State {
   selection: Set<number>;
   activeIds: number[];
   srtName: string;
+  original: DiskFile | null;
+  originalTr: DiskFile | null;
   video: VideoSource | null;
   videoLoaded: boolean;
   fakeTime: number;
@@ -36,6 +38,8 @@ export const state: State = {
   selection: new Set(),
   activeIds: [],       // subtitles on screen at the current time
   srtName: 'subtitles.srt',
+  original: null,      // subtitle file opened from disk: Ctrl+S writes it
+  originalTr: null,    // the same for the translation
   video: null,         // { name, size, url, token?, file? }
   videoLoaded: false,
   fakeTime: 0,         // "virtual" time when there is no video
